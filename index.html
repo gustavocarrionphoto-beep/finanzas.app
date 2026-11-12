@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mis Finanzas</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icono-180.png">
+  <link rel="icon" type="image/png" href="icono-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Finanzas">
+  <meta name="theme-color" content="#f4f6f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111715" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="barra">
+    <div class="titulo">
+      <h1>Mis Finanzas</h1>
+      <button type="button" id="estado-nube" class="enlace" data-accion="nube-estado" hidden></button>
+    </div>
+    <div class="mes-nav">
+      <button type="button" class="icono" data-accion="mes-anterior" aria-label="Mes anterior">‹</button>
+      <span id="mes-etiqueta"></span>
+      <button type="button" class="icono" data-accion="mes-siguiente" aria-label="Mes siguiente">›</button>
+    </div>
+    <button type="button" class="primario" data-accion="nuevo">+ Agregar movimiento</button>
+  </header>
+
+  <nav class="pestanas" id="pestanas">
+    <button type="button" data-vista="resumen">Resumen</button>
+    <button type="button" data-vista="movimientos">Movimientos</button>
+    <button type="button" data-vista="presupuestos">Presupuestos</button>
+    <button type="button" data-vista="reportes">Reportes y ajustes</button>
+  </nav>
+
+  <main id="contenido"></main>
+
+  <dialog id="dialogo">
+    <form id="formulario" method="dialog">
+      <h2 id="dialogo-titulo">Nuevo movimiento</h2>
+      <input type="hidden" name="id">
+      <div class="segmento">
+        <label><input type="radio" name="tipo" value="gasto" checked><span>Gasto</span></label>
+        <label><input type="radio" name="tipo" value="ingreso"><span>Ingreso</span></label>
+      </div>
+      <label>Monto
+        <input type="number" name="monto" min="0.01" step="0.01" inputmode="decimal" required placeholder="0.00">
+      </label>
+      <label class="interruptor">
+        <input type="checkbox" name="itbms">
+        <span class="palanca" aria-hidden="true"></span>
+        <span>Factura fiscal con ITBMS (7%)</span>
+      </label>
+      <div id="bloque-itbms" hidden>
+        <label class="casilla"><input type="checkbox" name="incluye"> El monto que escribí ya incluye el ITBMS</label>
+        <div id="desglose"></div>
+      </div>
+      <label>Fecha
+        <input type="date" name="fecha" required>
+      </label>
+      <label>Categoría
+        <select name="categoria" required></select>
+      </label>
+      <label><span><span id="rotulo-contraparte">Pagado a</span> <small>(opcional)</small></span>
+        <input type="text" name="contraparte" maxlength="80" list="lista-contrapartes" autocomplete="off">
+      </label>
+      <datalist id="lista-contrapartes"></datalist>
+      <label><span>Descripción <small>(opcional)</small></span>
+        <input type="text" name="descripcion" maxlength="120" placeholder="Ej. Supermercado">
+      </label>
+      <label>Método de pago
+        <select name="metodo"></select>
+      </label>
+      <label id="campo-factura"><span>Número de factura <small>(opcional)</small></span>
+        <input type="text" name="factura" maxlength="40" autocomplete="off">
+      </label>
+      <div class="acciones">
+        <button type="button" data-accion="cancelar">Cancelar</button>
+        <button type="submit" class="primario">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="xlsx.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script src="drive.js"></script>
+</body>
+</html>
