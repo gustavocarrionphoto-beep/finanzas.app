@@ -90,6 +90,7 @@ let estado = cargar();
 let mes = hoy().slice(0, 7);
 let vista = 'resumen';
 const filtros = { tipo: '', categoria: '', texto: '' };
+let tipoDona = 'gasto'; // qué muestra el gráfico circular del resumen
 
 // ---------- Utilidades ----------
 
@@ -143,9 +144,6 @@ function render() {
 function vistaResumen() {
   const t = totales(movsDeMes(mes));
   const tasa = t.ingresos > 0 ? t.balance / t.ingresos : null;
-  const cats = ordenados(t.porCat.gasto);
-  const maxCat = cats.length ? cats[0][1] : 0;
-
   return `
   <section class="cifras">
     <div class="tarjeta cifra"><div class="rotulo">Ingresos</div><div class="valor ingreso">${dinero(t.ingresos)}</div></div>
@@ -167,12 +165,14 @@ function vistaResumen() {
   </section>
   <section class="dos">
     <div class="tarjeta">
-      <h2>Gastos por categoría</h2>
-      ${cats.length ? cats.map(([cat, monto]) => `
-        <div class="barra-cat">
-          <div class="linea"><span>${esc(cat)}</span><span>${dinero(monto)} · ${Math.round((monto / t.gastos) * 100)}%</span></div>
-          <div class="pista"><i style="width:${(monto / maxCat) * 100}%"></i></div>
-        </div>`).join('') : '<p class="vacio">Sin gastos este mes.</p>'}
+      <div class="cabecera">
+        <h2>Por categoría</h2>
+        <div class="segmento chico" role="group" aria-label="Tipo de movimiento">
+          <button type="button" data-accion="dona-tipo" data-tipo="gasto" class="${tipoDona === 'gasto' ? 'activo' : ''}">Gastos</button>
+          <button type="button" data-accion="dona-tipo" data-tipo="ingreso" class="${tipoDona === 'ingreso' ? 'activo' : ''}">Ingresos</button>
+        </div>
+      </div>
+      ${dona(t.porCat[tipoDona], tipoDona === 'gasto' ? t.gastos : t.ingresos)}
     </div>
     <div class="tarjeta">
       <h2>Últimos 6 meses</h2>
@@ -180,6 +180,46 @@ function vistaResumen() {
       <div class="leyenda"><span><i style="background:var(--ingreso)"></i>Ingresos</span><span><i style="background:var(--gasto)"></i>Gastos</span></div>
     </div>
   </section>`;
+}
+
+// Colores de las categorías; el último (gris) agrupa las categorías pequeñas
+const COLORES_CAT = ['#2f7ed8', '#e8833a', '#3fae87', '#d1495b', '#8e6bd1', '#d4a72c', '#26a9b8', '#d45d9b'];
+const COLOR_OTRAS = '#8a9893';
+
+function dona(porCat, total) {
+  if (!total) return `<p class="vacio">Sin ${tipoDona === 'gasto' ? 'gastos' : 'ingresos'} este mes.</p>`;
+  let cats = ordenados(porCat).map(([nombre, monto], i) => ({ nombre, monto, color: COLORES_CAT[i] }));
+  // Más de 8 categorías: las menores se juntan en "Otras" para que el gráfico se lea bien
+  if (cats.length > COLORES_CAT.length) {
+    const resto = cats.slice(COLORES_CAT.length - 1);
+    cats = cats.slice(0, COLORES_CAT.length - 1);
+    cats.push({ nombre: `Otras (${resto.length})`, monto: resto.reduce((a, c) => a + c.monto, 0), color: COLOR_OTRAS, detalle: resto.map((c) => c.nombre).join(', ') });
+  }
+  const R = 70, C = 2 * Math.PI * R, hueco = cats.length > 1 ? 2 : 0;
+  let acumulado = 0;
+  const arcos = cats.map((c) => {
+    const largo = (c.monto / total) * C;
+    const arco = `<circle r="${R}" cx="100" cy="100" fill="none" stroke="${c.color}" stroke-width="34"
+      stroke-dasharray="${Math.max(0.5, largo - hueco)} ${C}" stroke-dashoffset="${-acumulado}">
+      <title>${esc(c.nombre)}: ${esc(dinero(c.monto))} (${pct(c.monto, total)})</title></circle>`;
+    acumulado += largo;
+    return arco;
+  }).join('');
+  return `<div class="dona">
+    <svg viewBox="0 0 200 200" role="img" aria-label="Porcentaje por categoría">
+      <g transform="rotate(-90 100 100)">${arcos}</g>
+      <text x="100" y="94" text-anchor="middle" class="dona-rotulo">Total</text>
+      <text x="100" y="116" text-anchor="middle" class="dona-total" style="font-size:${dinero(total).length > 12 ? 13 : dinero(total).length > 10 ? 15 : 17}px">${esc(dinero(total))}</text>
+    </svg>
+    <ul class="dona-leyenda">${cats.map((c) => `
+      <li${c.detalle ? ` title="${esc(c.detalle)}"` : ''}><i style="background:${c.color}"></i><span class="nombre">${esc(c.nombre)}</span><b>${pct(c.monto, total)}</b><span class="cant">${esc(dinero(c.monto))}</span></li>`).join('')}
+    </ul>
+  </div>`;
+}
+
+function pct(parte, total) {
+  const v = (parte / total) * 100;
+  return `${v < 10 && v % 1 ? v.toFixed(1).replace('.', ',') : Math.round(v)}%`;
 }
 
 function grafico() {
@@ -281,10 +321,21 @@ function tablaMovimientos() {
     (!texto || [m.descripcion, m.categoria, m.contraparte, m.metodo, m.factura].some((v) => v.toLowerCase().includes(texto))));
   if (!movs.length) return '<p class="vacio">No hay movimientos que mostrar.</p>';
   const t = totales(movs);
-  return `<table>
+  return `<div class="lista-movs">${movs.map((m) => `
+    <button type="button" class="mov" data-accion="editar" data-id="${esc(m.id)}">
+      <span class="mov-info">
+        <b>${esc(m.categoria)}</b>
+        <small>${fechaCorta(m.fecha)}${m.contraparte ? ` · ${esc(m.contraparte)}` : ''}${m.descripcion ? ` · ${esc(m.descripcion)}` : ''}</small>
+      </span>
+      <span class="mov-monto ${m.tipo}">${m.tipo === 'gasto' ? '−' : '+'}${esc(dinero(m.monto + m.itbms))}${m.itbms ? '<small>con ITBMS</small>' : ''}</span>
+      <span class="mov-flecha" aria-hidden="true">›</span>
+    </button>`).join('')}
+    <p class="nota-lista">${movs.length} movimiento${movs.length === 1 ? '' : 's'} · Balance ${esc(dinero(t.balance + t.itbmsBalance))} · Toca uno para editarlo</p>
+  </div>
+  <table class="tabla-movs">
     <thead><tr><th>Fecha</th><th>Categoría</th><th>De / Para</th><th>Descripción</th><th>Método</th><th class="monto">Monto</th><th class="monto">ITBMS</th><th class="monto">Total</th><th></th></tr></thead>
     <tbody>${movs.map((m) => `
-      <tr>
+      <tr class="fila-editable" data-fila="${esc(m.id)}" title="Clic para editar">
         <td>${fechaCorta(m.fecha)}</td>
         <td>${esc(m.categoria)}</td>
         <td class="desc">${esc(m.contraparte)}</td>
@@ -411,6 +462,7 @@ function abrirFormulario(mov) {
   if (mov && !estado.categorias[mov.tipo].includes(mov.categoria)) estado.categorias[mov.tipo].push(mov.categoria);
   llenarCategorias(f.tipo.value, mov?.categoria);
   $('#dialogo-titulo').textContent = mov ? 'Editar movimiento' : 'Nuevo movimiento';
+  $('#btn-borrar-dialogo').hidden = !mov;
   dialogo.showModal();
   f.monto.focus();
 }
@@ -634,7 +686,21 @@ function restaurar(archivo) {
 
 // ---------- Eventos ----------
 
+function borrarMovimiento(id) {
+  const m = estado.movimientos.find((x) => x.id === id);
+  if (!m || !confirm(`¿Borrar este movimiento?\n${fechaCorta(m.fecha)} · ${m.categoria} · ${dinero(m.monto)}`)) return false;
+  estado.movimientos = estado.movimientos.filter((x) => x.id !== id);
+  estado.borrados[id] = Date.now();
+  guardar();
+  render();
+  return true;
+}
+
 document.addEventListener('click', (e) => {
+  // Clic en cualquier parte de una fila de la tabla (fuera de sus botones) abre la edición
+  const fila = e.target.closest('tr[data-fila]');
+  if (fila && !e.target.closest('button')) { abrirFormulario(estado.movimientos.find((m) => m.id === fila.dataset.fila)); return; }
+
   const pestana = e.target.closest('#pestanas button');
   if (pestana) { vista = pestana.dataset.vista; render(); return; }
 
@@ -646,17 +712,10 @@ document.addEventListener('click', (e) => {
     case 'mes-siguiente': mes = mesMas(mes, 1); render(); break;
     case 'nuevo': abrirFormulario(); break;
     case 'cancelar': dialogo.close(); break;
-    case 'editar': abrirFormulario(estado.movimientos.find((m) => m.id === id)); break;
-    case 'borrar': {
-      const m = estado.movimientos.find((x) => x.id === id);
-      if (m && confirm(`¿Borrar este movimiento?\n${fechaCorta(m.fecha)} · ${m.categoria} · ${dinero(m.monto)}`)) {
-        estado.movimientos = estado.movimientos.filter((x) => x.id !== id);
-        estado.borrados[id] = Date.now();
-        guardar();
-        render();
-      }
-      break;
-    }
+    case 'editar': { const m = estado.movimientos.find((x) => x.id === id); if (m) abrirFormulario(m); break; }
+    case 'borrar': borrarMovimiento(id); break;
+    case 'borrar-dialogo': if (borrarMovimiento(formulario.elements.id.value)) dialogo.close(); break;
+    case 'dona-tipo': tipoDona = boton.dataset.tipo; render(); break;
     case 'exportar': exportarExcel(); break;
     case 'respaldar': descargar(`respaldo-finanzas-${hoy()}.json`, JSON.stringify(estado, null, 2), 'application/json'); break;
     case 'restaurar': $('#archivo-respaldo').click(); break;

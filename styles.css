@@ -204,3 +204,47 @@ dialog::backdrop { background: rgba(0, 0, 0, .45); }
 #desglose div:last-child { font-weight: 700; border-top: 1px solid var(--borde); margin-top: 4px; padding-top: 4px; }
 .cifras.mini .valor { font-size: 20px; }
 .acciones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+/* ---------- v3: gráfico circular, lista de movimientos y edición ---------- */
+.cabecera { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.cabecera h2 { margin: 0; }
+.segmento.chico { display: inline-grid; grid-template-columns: 1fr 1fr; }
+.segmento.chico button { border: 0; border-radius: 0; padding: 5px 12px; font-size: 13px; background: none; }
+.segmento.chico button.activo { background: var(--acento); color: var(--acento-texto); font-weight: 600; }
+
+.dona { display: grid; grid-template-columns: minmax(150px, 190px) 1fr; gap: 16px; align-items: center; }
+.dona svg { width: 100%; height: auto; display: block; }
+.dona circle { transition: opacity .15s; }
+.dona svg:hover circle { opacity: .55; }
+.dona svg circle:hover { opacity: 1; }
+.dona-rotulo { fill: var(--tenue); font-size: 13px; }
+.dona-total { fill: var(--texto); font-size: 17px; font-weight: 700; }
+.dona-leyenda { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.dona-leyenda li { display: grid; grid-template-columns: 12px 1fr auto; column-gap: 8px; align-items: center; }
+.dona-leyenda i { width: 12px; height: 12px; border-radius: 3px; }
+.dona-leyenda .nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dona-leyenda b { font-variant-numeric: tabular-nums; }
+.dona-leyenda .cant { grid-column: 2 / -1; color: var(--tenue); font-size: 12px; font-variant-numeric: tabular-nums; margin-top: -3px; }
+@media (max-width: 420px) { .dona { grid-template-columns: 1fr; } .dona svg { max-width: 200px; margin: 0 auto; } }
+
+tr.fila-editable { cursor: pointer; }
+tr.fila-editable:hover td { background: var(--pista); }
+
+.lista-movs { display: none; }
+.mov { display: grid; grid-template-columns: 1fr auto 14px; gap: 10px; align-items: center; width: 100%; text-align: left;
+  border: 0; border-bottom: 1px solid var(--borde); border-radius: 0; background: none; padding: 12px 2px; }
+.mov:active { background: var(--pista); }
+.mov-info { min-width: 0; }
+.mov-info b { display: block; }
+.mov-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mov-monto { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.mov-monto small { display: block; font-size: 11px; }
+.mov-flecha { color: var(--tenue); font-size: 20px; }
+.nota-lista { color: var(--tenue); font-size: 13px; text-align: center; margin: 12px 0 0; }
+@media (max-width: 700px) {
+  .lista-movs { display: block; }
+  .tabla-movs { display: none; }
+}
+
+button.peligro { color: var(--gasto); }
+.acciones #btn-borrar-dialogo { margin-right: auto; }
