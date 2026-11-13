@@ -120,12 +120,20 @@ window.Nube = (function () {
     }
     const movimientos = [...porId.values()].filter((m) => !(borrados[m.id] >= m.mod));
 
+    const recPorId = new Map();
+    for (const r of [...remoto.recurrentes, ...local.recurrentes]) {
+      const previo = recPorId.get(r.id);
+      if (!previo || r.mod > previo.mod) recPorId.set(r.id, r);
+    }
+    const recurrentes = [...recPorId.values()].filter((r) => !(borrados[r.id] >= r.mod));
+
     // Los ajustes (moneda, presupuestos) se toman del lado que los cambió más recientemente
     const [gana, otro] = local.ajustesMod > remoto.ajustesMod ? [local, remoto] : [remoto, local];
     const unir = (tipo) => [...new Set([...gana.categorias[tipo], ...otro.categorias[tipo]])];
     return {
       moneda: gana.moneda,
       movimientos,
+      recurrentes,
       presupuestos: { ...gana.presupuestos },
       categorias: { gasto: unir('gasto'), ingreso: unir('ingreso') },
       borrados,
@@ -137,7 +145,9 @@ window.Nube = (function () {
     return JSON.stringify([
       e.moneda, e.ajustesMod, Object.entries(e.presupuestos).sort(), e.categorias.gasto, e.categorias.ingreso,
       [...e.movimientos].sort((a, b) => (a.id < b.id ? -1 : 1))
-        .map((m) => [m.id, m.tipo, m.fecha, m.categoria, m.descripcion, m.contraparte, m.metodo, m.factura, m.monto, m.itbms, m.mod]),
+        .map((m) => [m.id, m.tipo, m.fecha, m.categoria, m.descripcion, m.contraparte, m.metodo, m.factura, m.monto, m.itbms, m.mod, m.recId || '']),
+      [...e.recurrentes].sort((a, b) => (a.id < b.id ? -1 : 1))
+        .map((r) => [r.id, r.tipo, r.categoria, r.descripcion, r.contraparte, r.metodo, r.monto, r.itbms, r.dia, r.desde, r.activo, r.mod]),
       Object.entries(e.borrados).sort(),
     ]);
   }
