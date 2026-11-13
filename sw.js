@@ -1,5 +1,5 @@
 // Permite que la app abra sin internet: guarda una copia de sus archivos.
-const CACHE = 'mis-finanzas-v3';
+const CACHE = 'mis-finanzas-v4';
 const ARCHIVOS = ['./', 'index.html', 'styles.css', 'app.js', 'xlsx.js', 'drive.js', 'config.js', 'manifest.webmanifest', 'icono-180.png', 'icono-192.png', 'icono-512.png'];
 
 self.addEventListener('install', (e) => {

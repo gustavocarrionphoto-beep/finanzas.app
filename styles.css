@@ -248,3 +248,14 @@ tr.fila-editable:hover td { background: var(--pista); }
 
 button.peligro { color: var(--gasto); }
 .acciones #btn-borrar-dialogo { margin-right: auto; }
+
+/* ---------- v4: recurrentes ---------- */
+.lista-rec .mov:last-child { border-bottom: 0; }
+.mov.pausado { opacity: .6; }
+.etiqueta { font-size: 11px; font-weight: 600; color: var(--aviso); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: middle; }
+.rec { color: var(--acento); font-weight: 700; }
+#bloque-recurrente { display: grid; gap: 8px; }
+#bloque-recurrente p.ayuda { margin: 0; font-size: 13px; }
+.dos-campos { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+@media (max-width: 600px) { .cabecera { flex-wrap: wrap; } }
+.lista-rec .mov-info small { white-space: normal; }

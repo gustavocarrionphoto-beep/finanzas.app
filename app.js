@@ -24,7 +24,7 @@ function hoy() {
 
 function estadoInicial() {
   // borrados y ajustesMod sirven para combinar los datos de varios dispositivos (ver drive.js)
-  return { moneda: 'USD', movimientos: [], presupuestos: {}, categorias: structuredClone(CATEGORIAS_INICIALES), borrados: {}, ajustesMod: 0 };
+  return { moneda: 'USD', movimientos: [], recurrentes: [], presupuestos: {}, categorias: structuredClone(CATEGORIAS_INICIALES), borrados: {}, ajustesMod: 0 };
 }
 
 function normalizar(datos) {
@@ -50,6 +50,25 @@ function normalizar(datos) {
         monto: redondear(Number(m.monto)), // monto sin ITBMS
         itbms: Number(m.itbms) > 0 ? redondear(Number(m.itbms)) : 0,
         mod: Number(m.mod) || 0, // momento de la última edición
+        ...(m.recId ? { recId: String(m.recId) } : {}), // creado por un recurrente
+      }));
+  }
+  if (Array.isArray(datos.recurrentes)) {
+    e.recurrentes = datos.recurrentes
+      .filter((r) => r && (r.tipo === 'gasto' || r.tipo === 'ingreso') && Number(r.monto) > 0 && /^\d{4}-\d{2}$/.test(r.desde))
+      .map((r) => ({
+        id: String(r.id || `r-${nuevoId()}`),
+        tipo: r.tipo,
+        categoria: String(r.categoria || 'Otros'),
+        descripcion: String(r.descripcion || ''),
+        contraparte: String(r.contraparte || ''),
+        metodo: String(r.metodo || ''),
+        monto: redondear(Number(r.monto)),
+        itbms: Number(r.itbms) > 0 ? redondear(Number(r.itbms)) : 0,
+        dia: Math.min(31, Math.max(1, Math.round(Number(r.dia)) || 1)), // día del mes en que se registra
+        desde: r.desde, // primer mes (AAAA-MM)
+        activo: r.activo !== false,
+        mod: Number(r.mod) || 0,
       }));
   }
   e.ajustesMod = Number(datos.ajustesMod) || 0;
@@ -91,6 +110,7 @@ let mes = hoy().slice(0, 7);
 let vista = 'resumen';
 const filtros = { tipo: '', categoria: '', texto: '' };
 let tipoDona = 'gasto'; // qué muestra el gráfico circular del resumen
+let modoForm = 'mov'; // el formulario edita un movimiento ('mov') o un recurrente ('rec')
 
 // ---------- Utilidades ----------
 
@@ -137,7 +157,7 @@ const porFecha = (movs) => [...movs].sort((a, b) => (a.fecha < b.fecha ? 1 : a.f
 function render() {
   $('#mes-etiqueta').textContent = nombreMes(mes);
   for (const b of document.querySelectorAll('#pestanas button')) b.classList.toggle('activa', b.dataset.vista === vista);
-  const vistas = { resumen: vistaResumen, movimientos: vistaMovimientos, presupuestos: vistaPresupuestos, reportes: vistaReportes };
+  const vistas = { resumen: vistaResumen, movimientos: vistaMovimientos, presupuestos: vistaPresupuestos, recurrentes: vistaRecurrentes, reportes: vistaReportes };
   $('#contenido').innerHTML = vistas[vista]();
 }
 
@@ -261,6 +281,12 @@ function consejos() {
     lista.push({ tono: 'ojo', html: 'No has registrado ingresos este mes; agrégalos para calcular tu tasa de ahorro.' });
   }
 
+  const fijos = estado.recurrentes.filter((r) => r.activo && r.tipo === 'gasto').reduce((a, r) => a + r.monto + r.itbms, 0);
+  if (fijos > 0 && t.ingresos > 0) {
+    const p = fijos / t.ingresos;
+    lista.push({ tono: p > 0.6 ? 'ojo' : '', html: `Tus gastos fijos (recurrentes) suman <b>${esc(dinero(fijos))}</b> al mes: el ${Math.round(p * 100)}% de tus ingresos de este mes.` });
+  }
+
   const cats = ordenados(t.porCat.gasto);
   if (cats.length) {
     const [cat, monto] = cats[0];
@@ -324,7 +350,7 @@ function tablaMovimientos() {
   return `<div class="lista-movs">${movs.map((m) => `
     <button type="button" class="mov" data-accion="editar" data-id="${esc(m.id)}">
       <span class="mov-info">
-        <b>${esc(m.categoria)}</b>
+        <b>${esc(m.categoria)}${m.recId ? ' <span class="rec" title="Recurrente">↻</span>' : ''}</b>
         <small>${fechaCorta(m.fecha)}${m.contraparte ? ` · ${esc(m.contraparte)}` : ''}${m.descripcion ? ` · ${esc(m.descripcion)}` : ''}</small>
       </span>
       <span class="mov-monto ${m.tipo}">${m.tipo === 'gasto' ? '−' : '+'}${esc(dinero(m.monto + m.itbms))}${m.itbms ? '<small>con ITBMS</small>' : ''}</span>
@@ -337,7 +363,7 @@ function tablaMovimientos() {
     <tbody>${movs.map((m) => `
       <tr class="fila-editable" data-fila="${esc(m.id)}" title="Clic para editar">
         <td>${fechaCorta(m.fecha)}</td>
-        <td>${esc(m.categoria)}</td>
+        <td>${esc(m.categoria)}${m.recId ? ' <span class="rec" title="Recurrente">↻</span>' : ''}</td>
         <td class="desc">${esc(m.contraparte)}</td>
         <td class="desc">${esc(m.descripcion)}${m.factura ? `<small>Factura n.º ${esc(m.factura)}</small>` : ''}</td>
         <td>${esc(m.metodo)}</td>
@@ -376,6 +402,83 @@ function vistaPresupuestos() {
       </div>`;
     }).join('')}
   </section>`;
+}
+
+// ---------- Recurrentes ----------
+
+function fechaDeMes(m, dia) {
+  const [a, mm] = m.split('-').map(Number);
+  return `${m}-${dos(Math.min(dia, new Date(a, mm, 0).getDate()))}`; // día 31 en un mes de 30 → último día
+}
+
+// Registra los movimientos recurrentes cuyo día ya llegó. El id es fijo por recurrente y mes,
+// así dos dispositivos nunca crean el mismo movimiento dos veces, y uno borrado no vuelve a aparecer.
+function generarRecurrentes() {
+  const ahora = hoy(), mesHoy = ahora.slice(0, 7);
+  const existentes = new Set(estado.movimientos.map((m) => m.id));
+  let nuevos = 0;
+  for (const r of estado.recurrentes) {
+    if (!r.activo) continue;
+    for (let m = r.desde, vueltas = 0; m <= mesHoy && vueltas < 240; m = mesMas(m, 1), vueltas++) {
+      const fecha = fechaDeMes(m, r.dia);
+      const id = `rec-${r.id}-${m}`;
+      if (fecha > ahora || existentes.has(id) || estado.borrados[id]) continue;
+      estado.movimientos.push({
+        id, tipo: r.tipo, fecha, categoria: r.categoria, descripcion: r.descripcion, contraparte: r.contraparte,
+        metodo: r.metodo, factura: '', monto: r.monto, itbms: r.itbms, mod: Date.now(), recId: r.id,
+      });
+      existentes.add(id);
+      nuevos++;
+    }
+  }
+  if (nuevos) guardar();
+  return nuevos;
+}
+
+function proximaFecha(r) {
+  const ahora = hoy();
+  let m = r.desde > ahora.slice(0, 7) ? r.desde : ahora.slice(0, 7);
+  if (fechaDeMes(m, r.dia) <= ahora) m = mesMas(m, 1);
+  return fechaDeMes(m, r.dia);
+}
+
+function vistaRecurrentes() {
+  const activos = estado.recurrentes.filter((r) => r.activo);
+  const suma = (tipo) => activos.filter((r) => r.tipo === tipo).reduce((a, r) => a + r.monto + r.itbms, 0);
+  const lista = [...estado.recurrentes].sort((a, b) => (a.tipo !== b.tipo ? (a.tipo === 'ingreso' ? -1 : 1) : a.dia - b.dia));
+  return `
+  <section class="cifras">
+    <div class="tarjeta cifra"><div class="rotulo">Ingresos fijos al mes</div><div class="valor ingreso">${dinero(suma('ingreso'))}</div></div>
+    <div class="tarjeta cifra"><div class="rotulo">Gastos fijos al mes</div><div class="valor gasto">${dinero(suma('gasto'))}</div></div>
+    <div class="tarjeta cifra"><div class="rotulo">Queda después de lo fijo</div><div class="valor ${suma('ingreso') - suma('gasto') < 0 ? 'gasto' : ''}">${dinero(suma('ingreso') - suma('gasto'))}</div></div>
+  </section>
+  <section class="tarjeta">
+    <div class="cabecera">
+      <h2>Gastos e ingresos recurrentes</h2>
+      <button type="button" class="primario" data-accion="nuevo-rec">+ Nuevo recurrente</button>
+    </div>
+    <p class="ayuda">Se registran solos en Movimientos el día indicado de cada mes. Si cambias o borras uno de esos movimientos, el cambio se respeta.</p>
+    ${lista.length ? `<div class="lista-rec">${lista.map((r) => `
+      <button type="button" class="mov ${r.activo ? '' : 'pausado'}" data-accion="editar-rec" data-id="${esc(r.id)}">
+        <span class="mov-info">
+          <b>${esc(r.descripcion || r.categoria)}${r.activo ? '' : ' <span class="etiqueta">En pausa</span>'}</b>
+          <small>${esc(r.descripcion ? r.categoria : '')}${r.descripcion ? ' · ' : ''}Día ${r.dia} de cada mes${r.activo ? ` · próximo: ${fechaCorta(proximaFecha(r))}` : ''}${r.contraparte ? ` · ${esc(r.contraparte)}` : ''}</small>
+        </span>
+        <span class="mov-monto ${r.tipo}">${r.tipo === 'gasto' ? '−' : '+'}${esc(dinero(r.monto + r.itbms))}${r.itbms ? '<small>con ITBMS</small>' : ''}</span>
+        <span class="mov-flecha" aria-hidden="true">›</span>
+      </button>`).join('')}</div>`
+    : '<p class="vacio">Aún no tienes recurrentes. Agrega tu alquiler, servicios, suscripciones o salario para que se registren solos cada mes.</p>'}
+  </section>`;
+}
+
+function borrarRecurrente(id) {
+  const r = estado.recurrentes.find((x) => x.id === id);
+  if (!r || !confirm(`¿Eliminar este recurrente?\n${r.descripcion || r.categoria} · ${dinero(r.monto + r.itbms)}\n\nLos movimientos ya registrados se mantienen; solo dejará de crearse en los próximos meses.`)) return false;
+  estado.recurrentes = estado.recurrentes.filter((x) => x.id !== id);
+  estado.borrados[id] = Date.now();
+  guardar();
+  render();
+  return true;
 }
 
 function vistaReportes() {
@@ -440,9 +543,23 @@ function ajustarPorTipo(tipo) {
   $('#campo-factura').hidden = tipo !== 'ingreso';
 }
 
-function abrirFormulario(mov) {
+function abrirFormulario(mov, esRecurrente = false) {
+  modoForm = esRecurrente ? 'rec' : 'mov';
   formulario.reset();
   const f = formulario.elements;
+  $('#campo-fecha').hidden = esRecurrente;
+  f.fecha.required = !esRecurrente;
+  $('#bloque-recurrente').hidden = !esRecurrente;
+  $('#campo-repetir').hidden = esRecurrente || Boolean(mov);
+  if (esRecurrente) {
+    const base = hoy().slice(0, 7);
+    const meses = new Set([...Array(25)].map((_, i) => mesMas(base, i - 12)));
+    if (mov?.desde) meses.add(mov.desde);
+    f.desde.innerHTML = [...meses].sort().map((m) => `<option value="${m}">${esc(nombreMes(m))}</option>`).join('');
+    f.desde.value = mov?.desde || base;
+    f.dia.value = mov?.dia || Number(hoy().slice(8));
+    f.activo.checked = mov ? mov.activo : true;
+  }
   const metodos = mov?.metodo && !METODOS.includes(mov.metodo) ? [...METODOS, mov.metodo] : METODOS;
   f.metodo.innerHTML = '<option value="">Sin especificar</option>' + metodos.map((m) => `<option>${esc(m)}</option>`).join('');
   f.metodo.value = mov?.metodo || '';
@@ -461,7 +578,7 @@ function abrirFormulario(mov) {
   actualizarDesglose();
   if (mov && !estado.categorias[mov.tipo].includes(mov.categoria)) estado.categorias[mov.tipo].push(mov.categoria);
   llenarCategorias(f.tipo.value, mov?.categoria);
-  $('#dialogo-titulo').textContent = mov ? 'Editar movimiento' : 'Nuevo movimiento';
+  $('#dialogo-titulo').textContent = esRecurrente ? (mov ? 'Editar recurrente' : 'Nuevo recurrente') : (mov ? 'Editar movimiento' : 'Nuevo movimiento');
   $('#btn-borrar-dialogo').hidden = !mov;
   dialogo.showModal();
   f.monto.focus();
@@ -507,7 +624,9 @@ formulario.addEventListener('submit', (e) => {
   e.preventDefault();
   const f = formulario.elements;
   const { base: monto, itbms } = calcularMontos();
-  if (!(monto > 0) || !f.fecha.value || f.categoria.value === NUEVA) return;
+  if (!(monto > 0) || f.categoria.value === NUEVA) return;
+  if (modoForm === 'rec') { guardarRecurrente(monto, itbms); return; }
+  if (!f.fecha.value) return;
   const datos = {
     id: f.id.value || nuevoId(),
     tipo: f.tipo.value,
@@ -521,13 +640,49 @@ formulario.addEventListener('submit', (e) => {
     itbms,
     mod: Date.now(),
   };
-  const i =estado.movimientos.findIndex((m) => m.id === datos.id);
+  const previo = estado.movimientos.find((m) => m.id === datos.id);
+  if (previo?.recId) datos.recId = previo.recId;
+  // "Repetir cada mes": crea el recurrente y este movimiento cuenta como el de este mes
+  if (!previo && f.repetir.checked) {
+    const r = { id: `r-${nuevoId()}`, tipo: datos.tipo, categoria: datos.categoria, descripcion: datos.descripcion, contraparte: datos.contraparte,
+      metodo: datos.metodo, monto, itbms, dia: Number(datos.fecha.slice(8)), desde: datos.fecha.slice(0, 7), activo: true, mod: Date.now() };
+    estado.recurrentes.push(r);
+    datos.id = `rec-${r.id}-${r.desde}`;
+    datos.recId = r.id;
+  }
+  const i = estado.movimientos.findIndex((m) => m.id === datos.id);
   if (i >= 0) estado.movimientos[i] = datos; else estado.movimientos.push(datos);
   guardar();
   mes = datos.fecha.slice(0, 7);
   dialogo.close();
   render();
 });
+
+function guardarRecurrente(monto, itbms) {
+  const f = formulario.elements;
+  const previo = estado.recurrentes.find((r) => r.id === f.id.value);
+  const r = {
+    id: previo?.id || `r-${nuevoId()}`,
+    tipo: f.tipo.value,
+    categoria: f.categoria.value,
+    descripcion: f.descripcion.value.trim(),
+    contraparte: f.contraparte.value.trim(),
+    metodo: f.metodo.value,
+    monto,
+    itbms,
+    dia: Math.min(31, Math.max(1, Math.round(Number(f.dia.value)) || 1)),
+    desde: f.desde.value,
+    activo: f.activo.checked,
+    mod: Date.now(),
+  };
+  // Al reactivar uno pausado no se rellenan los meses en pausa
+  if (previo && !previo.activo && r.activo && r.desde < hoy().slice(0, 7)) r.desde = hoy().slice(0, 7);
+  if (previo) Object.assign(previo, r); else estado.recurrentes.push(r);
+  guardar();
+  generarRecurrentes();
+  dialogo.close();
+  render();
+}
 
 // ---------- Exportar ----------
 
@@ -714,7 +869,13 @@ document.addEventListener('click', (e) => {
     case 'cancelar': dialogo.close(); break;
     case 'editar': { const m = estado.movimientos.find((x) => x.id === id); if (m) abrirFormulario(m); break; }
     case 'borrar': borrarMovimiento(id); break;
-    case 'borrar-dialogo': if (borrarMovimiento(formulario.elements.id.value)) dialogo.close(); break;
+    case 'borrar-dialogo': {
+      const ok = modoForm === 'rec' ? borrarRecurrente(formulario.elements.id.value) : borrarMovimiento(formulario.elements.id.value);
+      if (ok) dialogo.close();
+      break;
+    }
+    case 'nuevo-rec': abrirFormulario(null, true); break;
+    case 'editar-rec': { const r = estado.recurrentes.find((x) => x.id === id); if (r) abrirFormulario(r, true); break; }
     case 'dona-tipo': tipoDona = boton.dataset.tipo; render(); break;
     case 'exportar': exportarExcel(); break;
     case 'respaldar': descargar(`respaldo-finanzas-${hoy()}.json`, JSON.stringify(estado, null, 2), 'application/json'); break;
@@ -756,7 +917,13 @@ $('#contenido').addEventListener('change', (e) => {
   }
 });
 
+generarRecurrentes();
 render();
+
+// Al volver a la app (por ejemplo, al día siguiente) registra los recurrentes que ya tocan
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !dialogo.open && generarRecurrentes()) render();
+});
 
 // Modo sin conexión (solo en la versión publicada)
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

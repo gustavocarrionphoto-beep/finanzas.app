@@ -32,6 +32,7 @@
     <button type="button" data-vista="resumen">Resumen</button>
     <button type="button" data-vista="movimientos">Movimientos</button>
     <button type="button" data-vista="presupuestos">Presupuestos</button>
+    <button type="button" data-vista="recurrentes">Recurrentes</button>
     <button type="button" data-vista="reportes">Reportes y ajustes</button>
   </nav>
 
@@ -57,9 +58,26 @@
         <label class="casilla"><input type="checkbox" name="incluye"> El monto que escribí ya incluye el ITBMS</label>
         <div id="desglose"></div>
       </div>
-      <label>Fecha
+      <label id="campo-fecha">Fecha
         <input type="date" name="fecha" required>
       </label>
+      <label class="casilla" id="campo-repetir"><input type="checkbox" name="repetir"> Repetir cada mes en esta misma fecha</label>
+      <div id="bloque-recurrente" hidden>
+        <div class="dos-campos">
+          <label>Día del mes
+            <input type="number" name="dia" min="1" max="31" step="1" inputmode="numeric">
+          </label>
+          <label>Empieza en
+            <select name="desde"></select>
+          </label>
+        </div>
+        <p class="ayuda">Si el mes tiene menos días (por ejemplo, día 31 en febrero), se registra el último día del mes.</p>
+        <label class="interruptor">
+          <input type="checkbox" name="activo">
+          <span class="palanca" aria-hidden="true"></span>
+          <span>Activo (desactívalo para ponerlo en pausa)</span>
+        </label>
+      </div>
       <label>Categoría
         <select name="categoria" required></select>
       </label>
